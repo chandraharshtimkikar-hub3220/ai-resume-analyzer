@@ -1,0 +1,166 @@
+import json
+from pathlib import Path
+
+import joblib
+import matplotlib
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+
+from config import DEFAULT_LABELS_PATH, DEFAULT_METRICS_PATH, DEFAULT_MODEL_PATH, DEFAULT_VECTORIZER_PATH
+from matcher import compute_similarity_score
+from resume_parser import extract_text_from_pdf, normalize_text
+from skill_extractor import compare_skills, extract_skills
+from train_model import train_and_evaluate_model
+
+matplotlib.use("Agg")
+
+
+@st.cache_resource
+def load_saved_model():
+    """Load a trained vectorizer and classifier if available."""
+    if not Path(DEFAULT_MODEL_PATH).exists() or not Path(DEFAULT_VECTORIZER_PATH).exists():
+        return None, None, []
+
+    vectorizer = joblib.load(DEFAULT_VECTORIZER_PATH)
+    classifier = joblib.load(DEFAULT_MODEL_PATH)
+    labels = joblib.load(DEFAULT_LABELS_PATH) if Path(DEFAULT_LABELS_PATH).exists() else []
+    return vectorizer, classifier, labels
+
+
+def predict_category(resume_text, vectorizer, classifier, labels):
+    """Predict the resume category and confidence score."""
+    cleaned = normalize_text(resume_text)
+    if not cleaned or vectorizer is None or classifier is None:
+        raise ValueError("Resume text or model is missing.")
+
+    features = vectorizer.transform([cleaned])
+    probabilities = classifier.predict_proba(features)[0]
+    predicted_index = probabilities.argmax()
+    predicted_label = labels[predicted_index] if labels else classifier.classes_[predicted_index]
+    confidence = float(probabilities[predicted_index]) * 100
+    return predicted_label, confidence
+
+
+def render_skill_chart(matching_skills, resume_skills, missing_skills):
+    """Display a simple bar chart for skills summary."""
+    labels = ["Resume Skills", "Matching Skills", "Missing Skills"]
+    values = [len(resume_skills), len(matching_skills), len(missing_skills)]
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    ax.bar(labels, values, color=["#4e79a7", "#59a14f", "#e15759"])
+    ax.set_ylabel("Count")
+    ax.set_title("Skill Summary")
+    fig.tight_layout()
+    return fig
+
+
+def main():
+    st.set_page_config(page_title="Resume Analyzer", page_icon="📄", layout="wide")
+    st.title("AI Resume Analyzer and Job Matching System")
+    st.caption(
+        "Upload a resume PDF, paste a job description, and compare the resume against the role using machine learning and NLP."
+    )
+
+    st.sidebar.header("Project Info")
+    st.sidebar.markdown(
+        "This dashboard combines TF-IDF text analysis, logistic-regression category prediction, and skill matching. Results are informational and not hiring recommendations."
+    )
+
+    if not Path(DEFAULT_MODEL_PATH).exists() or not Path(DEFAULT_VECTORIZER_PATH).exists():
+        st.sidebar.warning(
+            "A trained model is missing. You can train it once with the command `python train_model.py`."
+        )
+
+    uploaded_resume = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
+    job_description = st.text_area(
+        "Paste the job or internship description",
+        height=220,
+        placeholder="Example: We are hiring a Python ML intern with experience in NLP, SQL, and scikit-learn...",
+    )
+
+    if st.button("Analyze", use_container_width=True):
+        try:
+            if uploaded_resume is None:
+                raise ValueError("Please upload a resume PDF before analyzing.")
+
+            if not job_description.strip():
+                raise ValueError("Please enter a valid job description.")
+
+            resume_text = extract_text_from_pdf(uploaded_resume)
+            if not resume_text:
+                raise ValueError("Resume text is empty. Please provide a readable resume PDF.")
+
+            vectorizer, classifier, labels = load_saved_model()
+            if vectorizer is None or classifier is None:
+                st.info("Training a model from the available dataset. This may take a few seconds.")
+                try:
+                    _, _ = train_and_evaluate_model()
+                    vectorizer, classifier, labels = load_saved_model()
+                except Exception as training_error:
+                    st.error(f"Model training failed: {training_error}")
+                    st.stop()
+
+            if vectorizer is None or classifier is None:
+                raise ValueError("A valid trained model could not be loaded or trained.")
+
+            predicted_category, confidence = predict_category(resume_text, vectorizer, classifier, labels)
+            similarity_score = compute_similarity_score(resume_text, job_description)
+            skill_summary = compare_skills(resume_text, job_description)
+            matching_skills = skill_summary["matching_skills"]
+            missing_skills = skill_summary["missing_in_resume"]
+            resume_skills = skill_summary["resume_skills"]
+
+            st.success("Analysis complete. Review the summary below.")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Predicted category", predicted_category)
+                st.metric("Category confidence", f"{confidence:.2f}%")
+            with col2:
+                st.metric("Resume–job similarity", f"{similarity_score:.2f}%")
+                st.caption("This score measures text similarity only, not final hiring suitability.")
+
+            st.subheader("Resume preview")
+            st.text_area("Extracted resume text", resume_text[:4000], height=180)
+
+            st.subheader("Skill matching")
+            skill_chart = render_skill_chart(matching_skills, resume_skills, missing_skills)
+            st.pyplot(skill_chart)
+
+            col3, col4, col5 = st.columns(3)
+            with col3:
+                st.markdown("### Skills found in resume")
+                if resume_skills:
+                    st.write(", ".join(resume_skills))
+                else:
+                    st.write("No skills detected in the resume.")
+            with col4:
+                st.markdown("### Matching skills")
+                if matching_skills:
+                    st.write(", ".join(matching_skills))
+                else:
+                    st.write("No overlapping skills detected.")
+            with col5:
+                st.markdown("### Missing from resume")
+                if missing_skills:
+                    st.write(", ".join(missing_skills))
+                else:
+                    st.write("No clear missing skills detected from the vocabulary.")
+
+            st.subheader("Interpretation")
+            st.markdown(
+                "- Matching skills indicate overlap between your resume and the job description.\n"
+                "- Skills listed in the job description but missing from the resume are potential skill gaps.\n"
+                "- These results are based on a transparent keyword vocabulary and text similarity, not a guaranteed hiring decision."
+            )
+
+            st.warning(
+                "Disclaimer: This system is for educational and informational use. It does not provide hiring recommendations or validate candidate suitability objectively."
+            )
+
+        except Exception as exc:
+            st.error(f"Error: {exc}")
+
+
+if __name__ == "__main__":
+    main()

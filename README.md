@@ -1,2 +1,28 @@
-# ai-resume-analyzer
-AI-powered Resume Analyzer and Job Description Matching System - A beginner-friendly ML project
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Data and model artifacts
+*.csv
+*.joblib
+*.pkl
+*.h5
+*.model
+
+data/*.csv
+models/*.joblib
+reports/*.json
+
+# OS and editor files
+.DS_Store
+.vscode/
+
+# Logs
+*.log
