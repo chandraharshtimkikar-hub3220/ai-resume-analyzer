@@ -50,7 +50,11 @@ SKILL_VOCAB = [
     "Kubernetes",
 ]
 
-# Keep these configurable through environment variables for flexibility.
 DATASET_PATH_ENV = "RESUME_DATASET_PATH"
 TEXT_COLUMN_ENV = "RESUME_TEXT_COLUMN"
 LABEL_COLUMN_ENV = "RESUME_LABEL_COLUMN"
+
+
+def ensure_project_dirs():
+    for directory in (DATA_DIR, MODELS_DIR, REPORTS_DIR):
+        directory.mkdir(parents=True, exist_ok=True)

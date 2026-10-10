@@ -1,0 +1,29 @@
+.gitignore
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Data and model artifacts
+*.csv
+*.joblib
+*.pkl
+*.h5
+*.model
+
+data/*.csv
+models/*.joblib
+reports/*.json
+
+# OS/editor files
+.DS_Store
+.vscode/
+
+# Logs
+*.log
